@@ -1,20 +1,40 @@
 const vscode = require('vscode');
 
-// import { decorationStore } from './decoration';
-
-function activate(context) {
-	console.log('Congratulations, your extension "ahah" is now active!');
-
-	// 创建一个装饰器类型
-	const decorationStore = vscode.window.createTextEditorDecorationType({
+// 生成装饰器
+function getDecoration(icon) {
+	return vscode.window.createTextEditorDecorationType({
 		before: {
-			contentText: '🏪 ',
+			contentText: icon,
 			margin: '0 0.2em 0 0'
 		}
 	});
+}
 
-	// 注册右键菜单命令
-	const rightClickCommand = vscode.commands.registerCommand('ahah.rightClickCommand', () => {
+const DECORATION_MAP = {
+	'store': '🏪',
+	'ref': '🔗',
+	'computed': '🔄',
+	'watch': '👀',
+}
+
+// 监听文件打开事件
+const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
+	if (editor) {
+		const document = editor.document;
+		// 检查是否是 JavaScript 相关文件
+		const isJsFile = ['javascript', 'typescript', 'javascriptreact'].includes(document.languageId);
+		isJsFile && vscode.commands.executeCommand('ahah.addDecoration')
+	}
+});
+
+function activate(context) {
+
+	const dec_map = new Map();
+	for (const [key, value] of Object.entries(DECORATION_MAP)) {
+		dec_map.set(key, getDecoration(value));
+	};
+
+	const addDecoration = vscode.commands.registerCommand('ahah.addDecoration', () => {
 		const editor = vscode.window.activeTextEditor;
 		if (editor) {
 			const document = editor.document;
@@ -45,22 +65,12 @@ function activate(context) {
 		}
 	});
 
-	// 监听文件打开事件
-	const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
-		if (editor) {
-			const document = editor.document;
-			// 检查是否是 JavaScript 相关文件
-			if (document.languageId === 'javascript' ||
-				document.languageId === 'typescript' ||
-				document.languageId === 'javascriptreact') {
-				// 执行命令
-				vscode.commands.executeCommand('ahah.rightClickCommand');
-			}
-		}
-	});
 
-	context.subscriptions.push(rightClickCommand);
-	context.subscriptions.push(decorationStore); // 注册装饰器类型以便在扩展停用时清理
+
+	context.subscriptions.push(addDecoration);
+	for (const [key, value] of dec_map) {
+		context.subscriptions.push(value);
+	}
 	context.subscriptions.push(fileOpenListener); // 注册文件打开监听器
 
 	// 原有的 helloWorld 命令
@@ -72,7 +82,11 @@ function activate(context) {
 }
 
 // This method is called when your extension is deactivated
-function deactivate() { }
+function deactivate(context) {
+	for (const decoration of context.subscriptions) {
+		decoration.dispose();
+	}
+}
 
 module.exports = {
 	activate,
