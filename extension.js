@@ -28,7 +28,7 @@ const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
 });
 
 function activate(context) {
-
+	// 生成装饰器
 	const dec_map = new Map();
 	for (const [key, value] of Object.entries(DECORATION_MAP)) {
 		dec_map.set(key, getDecoration(value));
@@ -61,24 +61,16 @@ function activate(context) {
 			}
 
 			// 应用装饰器
-			editor.setDecorations(decorationStore, decorationRanges);
+			editor.setDecorations(dec_map.get('store'), decorationRanges);
 		}
 	});
 
-
-
-	context.subscriptions.push(addDecoration);
+	// 统一订阅
 	for (const [key, value] of dec_map) {
 		context.subscriptions.push(value);
 	}
+	context.subscriptions.push(addDecoration);
 	context.subscriptions.push(fileOpenListener); // 注册文件打开监听器
-
-	// 原有的 helloWorld 命令
-	const disposable = vscode.commands.registerCommand('ahah.helloWorld', () => {
-		vscode.window.showInformationMessage('Hello World from ahah!');
-	});
-
-	context.subscriptions.push(disposable);
 }
 
 // This method is called when your extension is deactivated

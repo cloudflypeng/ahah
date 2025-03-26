@@ -10,18 +10,11 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished",
-    "onLanguage:javascript",
-    "onLanguage:typescript"
+    "onStartupFinished"
   ],
   "main": "./extension.js",
   "contributes": {
-    "commands": [
-      {
-        "command": "ahah.rightClickCommand",
-        "title": "右键添加随机数"
-      }
-    ]
+    "commands": []
   },
   "scripts": {
     "lint": "eslint .",
