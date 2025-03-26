@@ -1,4 +1,21 @@
 const vscode = require('vscode');
+const oxc = require('oxc-parser');
+
+let outputChannel;
+const getFileContent = (document) => {
+	try {
+		content = document.getText();
+		outputChannel.appendLine(`文件内容长度: ${content.length}`);
+		outputChannel.appendLine('文件内容开始 >>>');
+		outputChannel.appendLine(typeof content);
+		outputChannel.appendLine('<<< 文件内容结束');
+		return content;
+
+	} catch (e) {
+		outputChannel.appendLine(`获取文档内容失败: ${e.message}`);
+		return ''
+	}
+}
 
 // 生成装饰器
 function getDecoration(icon) {
@@ -19,66 +36,74 @@ const DECORATION_MAP = {
 
 // 监听文件打开事件
 const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
+	outputChannel.appendLine('文件被打开');
 	if (editor) {
+		outputChannel.appendLine(`文件类型: ${editor.document.languageId}`);
 		const document = editor.document;
-		// 检查是否是 JavaScript 相关文件
 		const isJsFile = ['javascript', 'typescript', 'javascriptreact'].includes(document.languageId);
-		isJsFile && vscode.commands.executeCommand('ahah.addDecoration')
+
+		if (isJsFile) {
+			outputChannel.appendLine('执行装饰器命令');
+			vscode.commands.executeCommand('ahah.addDecoration');
+		}
 	}
 });
 
 function activate(context) {
+	// 创建输出通道
+	outputChannel = vscode.window.createOutputChannel('Meancode');
+
+	// 使用 outputChannel 输出日志
+	outputChannel.appendLine('扩展已激活');
+
+	console.log('pyf-激活了')
 	// 生成装饰器
 	const dec_map = new Map();
-	for (const [key, value] of Object.entries(DECORATION_MAP)) {
-		dec_map.set(key, getDecoration(value));
-	};
 
-	const addDecoration = vscode.commands.registerCommand('ahah.addDecoration', () => {
+	// 确保所有装饰器都被正确创建和订阅
+	try {
+		for (const [key, value] of Object.entries(DECORATION_MAP)) {
+			const decoration = getDecoration(value);
+			dec_map.set(key, decoration);
+			// 将装饰器添加到订阅中
+			context.subscriptions.push(decoration);
+		}
+	} catch (error) {
+		console.error('创建装饰器失败:', error);
+	}
+
+	const addDecoration = vscode.commands.registerCommand('ahah.addDecoration', (uri) => {
+		outputChannel.appendLine('开始遍历文件');
 		const editor = vscode.window.activeTextEditor;
 		if (editor) {
 			const document = editor.document;
-			const decorationRanges = [];
 
-			// 遍历所有行
-			for (let i = 0; i < document.lineCount; i++) {
-				const line = document.lineAt(i);
-				const text = line.text;
+			// 输出文件信息
+			outputChannel.appendLine(`文件路径: ${document.uri.fsPath}`);
+			outputChannel.appendLine(`文件语言: ${document.languageId}`);
 
-				// 使用正则表达式查找包含 "store" 的单词
-				const regex = /\b\w*store\w*\b/gi; // 匹配包含 store 的完整单词
-				let match = regex.exec(text);
+			const content = getFileContent(document);
+			const fileName = document.uri.fsPath.split('/').pop();
 
-				while (match !== null) {
-					// 创建匹配单词的范围
-					const range = new vscode.Range(
-						new vscode.Position(i, match.index),
-						new vscode.Position(i, match.index + match[0].length)
-					);
-					decorationRanges.push(range);
-					match = regex.exec(text);
-				}
+			try {
+				const result = oxc.parseSync(fileName, content);
+				outputChannel.appendLine('oxc解析结束');
+				outputChannel.appendLine(JSON.stringify(result.program));
+			} catch (e) {
+				outputChannel.appendLine(`oxc解析失败: ${e.message}`);
 			}
 
-			// 应用装饰器
-			editor.setDecorations(dec_map.get('store'), decorationRanges);
+		} else {
+			outputChannel.appendLine('没有活动的编辑器');
 		}
 	});
 
-	// 统一订阅
-	for (const [key, value] of dec_map) {
-		context.subscriptions.push(value);
-	}
+	// 修改订阅部分
+	context.subscriptions.push(fileOpenListener);
 	context.subscriptions.push(addDecoration);
-	context.subscriptions.push(fileOpenListener); // 注册文件打开监听器
 }
 
-// This method is called when your extension is deactivated
-function deactivate(context) {
-	for (const decoration of context.subscriptions) {
-		decoration.dispose();
-	}
-}
+function deactivate() { }
 
 module.exports = {
 	activate,
