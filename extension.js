@@ -33,6 +33,15 @@ const DECORATION_MAP = {
 	'computed': '🔄',
 	'watch': '👀',
 }
+const MATCH_VAR = {
+	'ref': [],
+	'computed': [],
+	'storeValue': []
+}
+// ast 相关变量
+const ast_map = {
+	'VariableDeclaration': 'VariableDeclaration',
+}
 
 // 监听文件打开事件
 const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
@@ -49,14 +58,12 @@ const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
 	}
 });
 
-function activate(context) {
+async function activate(context) {
 	// 创建输出通道
 	outputChannel = vscode.window.createOutputChannel('Meancode');
 
-	// 使用 outputChannel 输出日志
-	outputChannel.appendLine('扩展已激活');
-
-	console.log('pyf-激活了')
+	await init()
+	console.log('pyf-激活了', Object.keys(oxc))
 	// 生成装饰器
 	const dec_map = new Map();
 
@@ -84,15 +91,49 @@ function activate(context) {
 
 			const content = getFileContent(document);
 			const fileName = document.uri.fsPath.split('/').pop();
-
+			// 收集变量
 			try {
 				const result = oxc.parseSync(fileName, content);
-				outputChannel.appendLine('oxc解析结束');
-				outputChannel.appendLine(JSON.stringify(result.program));
+				outputChannel.appendLine('oxc解析结束', JSON.stringify(result));
+				for (const item of result.program.body) {
+					const { type, callee, declarations } = item
+					const { id = {}, init = {} } = declarations?.[0] || {}
+					// outputChannel.appendLine(`类型: ${JSON.stringify(item)}`);
+					// TODO: 声明的变量,ref/computed 之类的
+					if (type === 'VariableDeclaration') {
+						if (init.callee.name === 'ref') {
+							MATCH_VAR.ref.push(id.name)
+						}
+						if (init.callee.name === 'computed') {
+							MATCH_VAR.computed.push(id.name)
+						}
+						if (init.callee.name.toLowerCase().includes('store')) {
+							console.log('store', JSON.stringify(item))
+							const { properties = [] } = id || {}
+							for (const item of properties) {
+								const key = item.key.name
+								const value = item.value.name
+								MATCH_VAR.storeValue.push(key)
+							}
+						}
+					}
+				}
+				console.log('匹配的变量', MATCH_VAR)
 			} catch (e) {
 				outputChannel.appendLine(`oxc解析失败: ${e.message}`);
 			}
-
+			// 生成正则表达式
+			const regMap = {}
+			for (const [key, value] of Object.entries(MATCH_VAR)) {
+				if (value.length === 0) continue
+				regMap[key] = new RegExp(`${value.join('|')}`, 'g')
+			}
+			console.log('正则表达式', regMap)
+			// 根据token遍历
+			const tokens = oxc.tokenize(content)
+			for (const token of tokens) {
+				console.log('token', token)
+			}
 		} else {
 			outputChannel.appendLine('没有活动的编辑器');
 		}
