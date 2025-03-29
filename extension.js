@@ -1,5 +1,7 @@
 const vscode = require('vscode');
 const oxc = require('oxc-parser');
+const { parse } = require('@babel/parser')
+
 
 let outputChannel;
 const getFileContent = (document) => {
@@ -27,59 +29,95 @@ function getDecoration(icon) {
 	});
 }
 
-const DECORATION_MAP = {
-	'store': '🏪',
-	'ref': '🔗',
-	'computed': '🔄',
-	'watch': '👀',
-}
-const MATCH_VAR = {
-	'ref': [],
-	'computed': [],
-	'storeValue': []
-}
-// ast 相关变量
-const ast_map = {
-	'VariableDeclaration': 'VariableDeclaration',
-}
-
 // 监听文件打开事件
-const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
-	outputChannel.appendLine('文件被打开');
-	if (editor) {
-		outputChannel.appendLine(`文件类型: ${editor.document.languageId}`);
-		const document = editor.document;
-		const isJsFile = ['javascript', 'typescript', 'javascriptreact'].includes(document.languageId);
+// const fileOpenListener = vscode.window.onDidChangeActiveTextEditor(editor => {
+// 	outputChannel.appendLine('文件被打开');
+// 	if (editor) {
+// 		outputChannel.appendLine(`文件类型: ${editor.document.languageId}`);
+// 		const document = editor.document;
+// 		const isJsFile = ['javascript', 'typescript', 'javascriptreact'].includes(document.languageId);
 
-		if (isJsFile) {
-			outputChannel.appendLine('执行装饰器命令');
-			vscode.commands.executeCommand('ahah.addDecoration');
-		}
-	}
-});
+// 		if (isJsFile) {
+// 			outputChannel.appendLine('执行装饰器命令');
+// 			vscode.commands.executeCommand('ahah.addDecoration');
+// 		}
+// 	}
+// });
 
 async function activate(context) {
 	// 创建输出通道
 	outputChannel = vscode.window.createOutputChannel('Meancode');
 
-	await init()
-	console.log('pyf-激活了', Object.keys(oxc))
-	// 生成装饰器
-	const dec_map = new Map();
+	// 防抖函数
+	let timeout = null;
+	const debounce = (fn, delay = 300) => {
+		return (...args) => {
+			if (timeout) {
+				clearTimeout(timeout);
+			}
+			timeout = setTimeout(() => {
+				fn.apply(null, args);
+				timeout = null;
+			}, delay);
+		};
+	};
 
-	// 确保所有装饰器都被正确创建和订阅
-	try {
-		for (const [key, value] of Object.entries(DECORATION_MAP)) {
-			const decoration = getDecoration(value);
-			dec_map.set(key, decoration);
-			// 将装饰器添加到订阅中
-			context.subscriptions.push(decoration);
+	// 处理文件的核心逻辑
+	const handleActiveFile = debounce(() => {
+		const editor = vscode.window.activeTextEditor;
+		if (editor && ['javascript', 'typescript', 'javascriptreact', 'typescriptreact'].includes(editor.document.languageId)) {
+			vscode.commands.executeCommand('ahah.addDecoration');
 		}
-	} catch (error) {
-		console.error('创建装饰器失败:', error);
-	}
+	});
 
+	// 监听编辑器切换
+	context.subscriptions.push(
+		vscode.window.onDidChangeActiveTextEditor(() => {
+			handleActiveFile();
+		})
+	);
+
+	// // 监听文档变化
+	// context.subscriptions.push(
+	// 	vscode.workspace.onDidChangeTextDocument((event) => {
+	// 		// 只处理当前活动编辑器的文档变化
+	// 		if (event.document === vscode.window.activeTextEditor?.document) {
+	// 			handleActiveFile();
+	// 		}
+	// 	})
+	// );
+
+	// 注册命令
 	const addDecoration = vscode.commands.registerCommand('ahah.addDecoration', (uri) => {
+		const DECORATION_MAP = {
+			'store': '🏪',
+			'ref': '🔗',
+			'computed': '🔄',
+			'watch': '👀',
+		}
+		const MATCH_VAR = {
+			'ref': [],
+			'computed': [],
+			'storeValue': []
+		}
+		// ast 相关变量
+		const ast_map = {
+			'VariableDeclaration': 'VariableDeclaration',
+		}
+		// 生成装饰器
+		const dec_map = new Map();
+
+		// 确保所有装饰器都被正确创建和订阅
+		try {
+			for (const [key, value] of Object.entries(DECORATION_MAP)) {
+				const decoration = getDecoration(value);
+				dec_map.set(key, decoration);
+				// 将装饰器添加到订阅中
+				context.subscriptions.push(decoration);
+			}
+		} catch (error) {
+			console.error('创建装饰器失败:', error);
+		}
 		outputChannel.appendLine('开始遍历文件');
 		const editor = vscode.window.activeTextEditor;
 		if (editor) {
@@ -126,21 +164,47 @@ async function activate(context) {
 			const regMap = {}
 			for (const [key, value] of Object.entries(MATCH_VAR)) {
 				if (value.length === 0) continue
-				regMap[key] = new RegExp(`${value.join('|')}`, 'g')
+				// 正则需要完全匹配
+				regMap[key] = new RegExp(`^${value.join('|')}$`, 'g')
 			}
 			console.log('正则表达式', regMap)
 			// 根据token遍历
-			const tokens = oxc.tokenize(content)
-			for (const token of tokens) {
-				console.log('token', token)
+			const tokens = parse(content, { tokens: true })
+			const ranges = {
+				ref: [],
+				computed: [],
+				store: []
 			}
+
+			for (const token of tokens.tokens) {
+				const { value, start, end } = token
+				if (!value) continue
+				const startPos = document.positionAt(start)
+				const endPos = document.positionAt(end)
+				if (regMap.ref.test(value)) {
+					console.log('ref', value)
+					ranges.ref.push(new vscode.Range(startPos, endPos))
+				} else if (regMap.computed.test(value)) {
+					console.log('computed', regMap.computed, value)
+					ranges.computed.push(new vscode.Range(startPos, endPos))
+				} else if (regMap.storeValue.test(value)) {
+					console.log('storeValue', value)
+					ranges.store.push(new vscode.Range(startPos, endPos))
+				}
+			}
+			console.log('ranges', ranges)
+			// 设置装饰器
+			editor.setDecorations(dec_map.get('ref'), ranges.ref)
+			editor.setDecorations(dec_map.get('computed'), ranges.computed)
+			editor.setDecorations(dec_map.get('store'), ranges.store)
 		} else {
 			outputChannel.appendLine('没有活动的编辑器');
 		}
 	});
 
-	// 修改订阅部分
-	context.subscriptions.push(fileOpenListener);
+	// 初始执行一次
+	handleActiveFile();
+
 	context.subscriptions.push(addDecoration);
 }
 

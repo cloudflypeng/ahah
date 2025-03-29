@@ -11,7 +11,10 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -36,6 +39,7 @@
     "eslint": "^9.21.0"
   },
   "dependencies": {
+    "@babel/parser": "^7.27.0",
     "oxc-parser": "^0.61.2"
   }
 }
